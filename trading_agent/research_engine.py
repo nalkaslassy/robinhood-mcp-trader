@@ -218,9 +218,11 @@ def _find_resistance(highs: List[float], current: float, lookback: int = 20) -> 
 # Pipeline steps
 # ---------------------------------------------------------------------------
 
-def scan_universe() -> List[str]:
-    """Step 1 — return the configured watchlist."""
-    return list(config.WATCHLIST)
+def scan_universe(watchlist_manager=None) -> List[str]:
+    """Step 1 — return the active watchlist from WatchlistManager, or the seed list."""
+    if watchlist_manager is not None:
+        return watchlist_manager.get_active_symbols()
+    return list(config.WATCHLIST_SEED)
 
 
 def technical_screen(symbol: str, client: MarketDataClient) -> TechnicalSignal:
@@ -488,6 +490,7 @@ def run_daily_research(
     client: MarketDataClient,
     wash_sale_checker=None,
     date_str: Optional[str] = None,
+    watchlist_manager=None,
 ) -> DailyResearchReport:
     """Orchestrate all 6 steps and return a complete daily report."""
     from datetime import date as date_cls
@@ -508,7 +511,7 @@ def run_daily_research(
         error_log.append(f"macro_sentiment_check error: {e}")
 
     # Steps 1-4 per symbol
-    for symbol in scan_universe():
+    for symbol in scan_universe(watchlist_manager):
         try:
             tech = technical_screen(symbol, client)
         except Exception as e:

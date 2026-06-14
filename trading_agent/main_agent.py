@@ -2,24 +2,24 @@
 Main Agent — orchestrates the full daily trading workflow.
 
 Workflow (daily):
-  1. Morning: run research, generate proposal(s)
-  2. Present proposal(s) to human for approval
-  3. On approval: place bracket order
-  4. On expiry without approval: discard, log "not_taken"
-  5. Throughout market hours: defensive monitor + bracket integrity checks
-  6. End of day: overnight hold check, generate daily report
-  7. Weekly/monthly: trigger corresponding reports on schedule
+  1. Morning: run research using WatchlistManager's active symbols
+  2. Record daily outcomes back into WatchlistManager
+  3. Friday: run weekly watchlist review via Claude Sonnet
+  4. Present proposal(s) to human via SMS (Twilio) for approval
+  5. On approval: place bracket order via Robinhood MCP
+  6. Throughout market hours: defensive monitor + bracket integrity checks
+  7. End of day: overnight hold check, generate daily report
 
-This module is the entry point for live operation.  In DRY_RUN mode (default)
-no real orders are placed.  Human approval is simulated via stdin prompts;
-replace with a webhook / notification service for production use.
+Live vs dry-run: set DRY_RUN=False in config.py only after validating with
+DRY_RUN=True for at least one full week.
 """
 from __future__ import annotations
 
 import logging
+import os
 import sys
 from datetime import date, datetime, timezone
-from typing import List, Optional, Tuple
+from typing import List, Optional
 
 from trading_agent import config
 from trading_agent.account_state import AccountStateManager, Position
@@ -43,6 +43,8 @@ from trading_agent.trade_proposal import (
     format_proposal_for_display,
 )
 from trading_agent.wash_sale_tracker import WashSaleTracker
+from trading_agent.watchlist_manager import WatchlistManager
+from trading_agent.sms_notifier import SMSNotifier
 
 logging.basicConfig(
     level=logging.INFO,
@@ -62,6 +64,8 @@ class TradingAgent:
         order_executor: Optional[OrderExecutor] = None,
         account_manager: Optional[AccountStateManager] = None,
         wash_sale_tracker: Optional[WashSaleTracker] = None,
+        watchlist_manager: Optional[WatchlistManager] = None,
+        sms_notifier: Optional[SMSNotifier] = None,
         approval_callback=None,
     ):
         self._data_client = market_data_client
@@ -69,8 +73,17 @@ class TradingAgent:
         self._account = account_manager or AccountStateManager(mcp_client=None)
         self._wash = wash_sale_tracker or WashSaleTracker()
         self._monitor = DefensiveMonitor()
-        # approval_callback(proposal) -> bool; defaults to stdin prompt
-        self._approval_callback = approval_callback or self._stdin_approval
+        self._watchlist = watchlist_manager or WatchlistManager()
+        self._notifier = sms_notifier or SMSNotifier()
+
+        # approval_callback(proposal) -> bool
+        # Priority: explicit callback > SMSNotifier > stdin fallback
+        if approval_callback is not None:
+            self._approval_callback = approval_callback
+        elif sms_notifier is not None:
+            self._approval_callback = lambda p: sms_notifier.wait_for_approval(p)
+        else:
+            self._approval_callback = self._stdin_approval
 
         self._active_proposals: List[TradeProposal] = []
         self._closed_today: List[TradeJournalEntry] = []
@@ -105,6 +118,7 @@ class TradingAgent:
             client=self._data_client,
             wash_sale_checker=lambda sym: self._wash.check_wash_sale(sym),
             date_str=date.today().isoformat(),
+            watchlist_manager=self._watchlist,
         )
 
         logger.info("Macro state: %s", report.macro.state.value)
@@ -115,10 +129,48 @@ class TradingAgent:
             len(report.earnings_excluded),
         )
 
+        # Record today's outcomes so the watchlist manager can track performance
+        try:
+            self._watchlist.record_daily_outcomes(report)
+        except Exception as e:
+            logger.error("watchlist record_daily_outcomes error: %s", e)
+
+        # Weekly watchlist review (Fridays or first-ever run)
+        if self._watchlist.should_run_weekly_review():
+            self._run_weekly_watchlist_review()
+
         for candidate in report.ranked_candidates:
             self._process_candidate(candidate, snap.total_value)
 
         return report
+
+    def _run_weekly_watchlist_review(self):
+        logger.info("=== Weekly watchlist review ===")
+        popular: List[str] = []
+        if self._data_client is not None and hasattr(self._data_client, "get_popular_watchlist_symbols"):
+            try:
+                popular = self._data_client.get_popular_watchlist_symbols()
+                self._watchlist.register_candidates(popular)
+            except Exception as e:
+                logger.warning("Could not fetch popular watchlists: %s", e)
+        try:
+            decisions = self._watchlist.run_weekly_review(popular_candidates=popular)
+            if decisions:
+                reasoning = decisions.get("reasoning", "")
+                logger.info("Watchlist review complete. Reasoning: %s", reasoning)
+                active_count = len(self._watchlist.get_active_symbols())
+                logger.info("Active watchlist now has %d symbols.", active_count)
+                # Alert via SMS so you can see what changed
+                kept    = len(decisions.get("keep", []))
+                removed = len(decisions.get("remove", []))
+                added   = len(decisions.get("add", []))
+                self._notifier.send_alert(
+                    f"Weekly watchlist review complete.\n"
+                    f"Kept {kept} | Removed {removed} | Added {added}\n"
+                    f"{reasoning}"
+                )
+        except Exception as e:
+            logger.error("Weekly watchlist review error: %s", e)
 
     def _process_candidate(self, candidate: RankedCandidate, account_value: float):
         is_lev = candidate.symbol in config.LEVERAGED_ETFS
@@ -134,6 +186,8 @@ class TradingAgent:
 
         logger.info("\n%s", format_proposal_for_display(proposal))
 
+        # Send proposal via SMS and wait for human approval
+        self._notifier.send_proposal(proposal)
         if self._approval_callback(proposal):
             self._execute_approved_proposal(proposal)
         else:
@@ -152,8 +206,14 @@ class TradingAgent:
                 result.order_id, result.stop_order_id, result.target_order_id,
                 " [DRY RUN]" if result.dry_run else "",
             )
+            self._notifier.send_confirmation(
+                proposal.symbol, result.order_id, dry_run=result.dry_run
+            )
         else:
             logger.error("Order FAILED for %s: %s", proposal.symbol, result.message)
+            self._notifier.send_alert(
+                f"Order FAILED for {proposal.symbol}: {result.message}"
+            )
 
     # ------------------------------------------------------------------
     # Intraday monitoring cycle (call 2-3x during market hours)
@@ -172,6 +232,7 @@ class TradingAgent:
         )
         if pause:
             logger.warning("DEFENSIVE PAUSE: %s", reason)
+            self._notifier.send_alert(f"DEFENSIVE PAUSE: {reason}")
 
         try:
             positions = self._executor.check_open_positions()
@@ -184,8 +245,14 @@ class TradingAgent:
             result = self._executor.check_bracket_integrity(position, open_orders)
             if result.emergency:
                 logger.critical("BRACKET EMERGENCY: %s", result.emergency_reason)
+                self._notifier.send_alert(
+                    f"BRACKET EMERGENCY for {position.symbol}: {result.emergency_reason}"
+                )
             elif not result.stop_order_active:
                 logger.warning("%s: stop order not found — verify manually!", position.symbol)
+                self._notifier.send_alert(
+                    f"WARNING: {position.symbol} stop order not found. Verify manually."
+                )
 
     # ------------------------------------------------------------------
     # End-of-day
@@ -257,7 +324,7 @@ class TradingAgent:
 
     @staticmethod
     def _stdin_approval(proposal: TradeProposal) -> bool:
-        """Default human-approval gate: prompt via stdin."""
+        """Fallback human-approval gate when Twilio is not configured."""
         print(format_proposal_for_display(proposal))
         try:
             answer = input("Approve this trade? [y/N] ").strip().lower()
@@ -267,12 +334,44 @@ class TradingAgent:
 
 
 # ---------------------------------------------------------------------------
-# CLI entry point
+# CLI entry point — builds live clients from environment variables
 # ---------------------------------------------------------------------------
+
+def _build_live_agent() -> TradingAgent:
+    """
+    Wire all live components together.
+    Requires: ANTHROPIC_API_KEY, ROBINHOOD_MCP_TOKEN
+    Optional: TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_FROM, YOUR_PHONE_NUMBER
+    """
+    import anthropic
+    from trading_agent.robinhood_mcp_client import (
+        RobinhoodMarketDataClient,
+        RobinhoodOrderClient,
+    )
+
+    claude = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
+
+    market_data  = RobinhoodMarketDataClient(claude=claude)
+    order_client = RobinhoodOrderClient(claude=claude)
+    notifier     = SMSNotifier()
+    watchlist    = WatchlistManager(anthropic_client=claude)
+
+    executor     = OrderExecutor(mcp_client=order_client)
+    account_mgr  = AccountStateManager(mcp_client=order_client)
+
+    return TradingAgent(
+        market_data_client=market_data,
+        order_executor=executor,
+        account_manager=account_mgr,
+        wash_sale_tracker=WashSaleTracker(),
+        watchlist_manager=watchlist,
+        sms_notifier=notifier,
+    )
+
 
 def main():
     logger.info("Trading agent starting (DRY_RUN=%s)", config.DRY_RUN)
-    agent = TradingAgent()
+    agent = _build_live_agent()
     report = agent.run_morning_research()
     if report:
         agent.run_end_of_day(report)
