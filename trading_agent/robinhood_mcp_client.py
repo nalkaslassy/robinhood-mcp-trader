@@ -85,7 +85,7 @@ def _call_robinhood(
     instruction: str,
     *,
     model: str = config.MODEL_DATA,
-    max_tokens: int = 8192,
+    max_tokens: int = 4096,
 ) -> str:
     """
     Send a single-turn instruction to Claude Haiku with the Robinhood MCP
@@ -96,11 +96,13 @@ def _call_robinhood(
     return a structured result. We ask it to always respond with JSON so
     we can parse the output cleanly.
     """
+    logger.debug("MCP call: %s", instruction[:80])
     response = claude.beta.messages.create(
         model=model,
         max_tokens=max_tokens,
         betas=["mcp-client-2025-04-04"],
         mcp_servers=[_build_mcp_config()],
+        timeout=90,
         messages=[
             {
                 "role": "user",
@@ -112,10 +114,22 @@ def _call_robinhood(
             }
         ],
     )
-    # Extract the last text block from the response
+    logger.debug("MCP call complete, stop_reason=%s", response.stop_reason)
+    # Extract the last non-empty text block from the response
     for block in reversed(response.content):
-        if hasattr(block, "text"):
-            return block.text.strip()
+        if not hasattr(block, "text"):
+            continue
+        text = block.text.strip()
+        if not text:
+            continue
+        # Strip markdown code fences Claude sometimes adds despite instructions
+        if text.startswith("```"):
+            lines = text.splitlines()
+            lines = lines[1:]  # drop opening ```json line
+            if lines and lines[-1].strip().startswith("```"):
+                lines = lines[:-1]  # drop closing ```
+            text = "\n".join(lines).strip()
+        return text
     return "{}"
 
 
@@ -142,13 +156,16 @@ class RobinhoodMarketDataClient:
         # VIX historical data is not available directly; use VXX as proxy
         fetch_symbol = "VXX" if symbol == "VIX" else symbol
 
+        # Cap at 30 trading days to keep response size manageable
+        fetch_days = min(days, 30)
         raw = _call_robinhood(
             self._claude,
             f"Use get_equity_historicals to fetch daily OHLCV data for "
-            f"{fetch_symbol} for the past {days} calendar days. "
+            f"{fetch_symbol} for the past {fetch_days} calendar days. "
             f"Return a JSON array where each element has keys: "
             f"date, open, high, low, close, volume. "
-            f"Sort oldest first. Include only complete trading days.",
+            f"Sort oldest first. Include only complete trading days. "
+            f"Return at most 30 bars.",
         )
         try:
             bars = json.loads(raw)

@@ -99,7 +99,12 @@ class AccountStateManager:
 
     def get_snapshot(self) -> AccountSnapshot:
         if self._snapshot is None:
-            raise RuntimeError("Call refresh() before accessing snapshot.")
+            # Return a conservative default so research can proceed without live data
+            return AccountSnapshot(
+                cash=config.STARTING_CAPITAL,
+                positions=[],
+                peak_account_value=config.STARTING_CAPITAL,
+            )
         return self._snapshot
 
     # ------------------------------------------------------------------

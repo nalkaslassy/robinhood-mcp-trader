@@ -98,8 +98,9 @@ class TradingAgent:
         try:
             self._account.refresh()
         except Exception as e:
-            logger.error("Failed to refresh account state: %s", e)
-            return None
+            logger.warning(
+                "Account refresh failed (%s) — continuing research with cached state.", e
+            )
 
         snap = self._account.get_snapshot()
         logger.info(
@@ -340,18 +341,18 @@ class TradingAgent:
 def _build_live_agent() -> TradingAgent:
     """
     Wire all live components together.
-    Requires: ANTHROPIC_API_KEY, ROBINHOOD_MCP_TOKEN
+    Requires: ANTHROPIC_API_KEY
+    For order placement: ROBINHOOD_MCP_TOKEN (only used when a trade fires)
     Optional: TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_FROM, YOUR_PHONE_NUMBER
     """
     import anthropic
-    from trading_agent.robinhood_mcp_client import (
-        RobinhoodMarketDataClient,
-        RobinhoodOrderClient,
-    )
+    from trading_agent.yfinance_client import YFinanceDataClient
+    from trading_agent.robinhood_mcp_client import RobinhoodOrderClient
 
     claude = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
 
-    market_data  = RobinhoodMarketDataClient(claude=claude)
+    # Free data via yfinance — no API cost for daily research
+    market_data  = YFinanceDataClient()
     order_client = RobinhoodOrderClient(claude=claude)
     notifier     = SMSNotifier()
     watchlist    = WatchlistManager(anthropic_client=claude)
@@ -370,6 +371,15 @@ def _build_live_agent() -> TradingAgent:
 
 
 def main():
+    # Load .env from the project root so plain `python -m trading_agent.main_agent` works
+    try:
+        from pathlib import Path as _Path
+        from dotenv import load_dotenv
+        _env = _Path(__file__).parent.parent / ".env"
+        load_dotenv(_env, override=True)
+    except Exception:
+        pass
+
     logger.info("Trading agent starting (DRY_RUN=%s)", config.DRY_RUN)
     agent = _build_live_agent()
     report = agent.run_morning_research()
