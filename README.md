@@ -1,151 +1,196 @@
 # Robinhood MCP Trading Agent
 
-> **DISCLAIMER — PLEASE READ BEFORE USE**
+> **DISCLAIMER — READ BEFORE USE**
 >
-> This project is for **educational and portfolio demonstration purposes only**.
+> This project is for **educational and portfolio-demonstration purposes only**.
 > It is **not financial advice**. Trading involves substantial risk of loss.
-> Past performance of any strategy does not guarantee future results.
-> **You assume all risk** for any live trading you conduct using this software.
-> The author(s) are not registered investment advisers and make no representation
-> about the suitability of this strategy for any particular investor.
-> Never risk money you cannot afford to lose.
+> Past performance does not guarantee future results. **You assume all risk**
+> for any live trading you conduct using this software. The author(s) are not
+> registered investment advisers. Never risk money you cannot afford to lose.
 
 ---
 
-## Overview
+## What it does
 
-A Python-based swing-trading research agent for a small Robinhood account.
+A fully-automated Python swing-trading agent for a small Robinhood account. Every weekday morning it:
 
-**Design principles:**
-- **Human-in-the-loop for entries**: every new position requires explicit approval before an order is sent.
-- **Automated exits**: bracket orders (stop-loss + profit-target) are placed immediately at entry as hard broker-side orders.
-- **Rules-based research**: a 6-step pipeline screens candidates from a fixed watchlist, checks macro conditions (SPY trend + VIX), and ranks by reward:risk ratio.
-- **Multiple circuit breakers**: account drawdown breaker, intraday VIX spike gate, earnings-proximity exclusion, liquidity floor.
+1. Pulls free market data via **yfinance** (no API cost)
+2. Runs a 6-step technical screening pipeline on a 19-symbol watchlist
+3. Checks macro conditions (SPY trend + VIX level)
+4. If a stock passes all screens → sends you a **WhatsApp message** with the trade details
+5. You reply **YES** or **NO** from your phone
+6. On YES → places a bracket order on Robinhood (limit buy + stop-loss + profit target)
+7. Saves a daily log to `logs/YYYYMMDD.txt`
 
-The agent was designed with a $250 starting account; all percentages scale to any account size.
+The agent runs automatically at 9:45 AM Mon–Fri via **Windows Task Scheduler** — no manual action required.
+
+---
+
+## Cost breakdown
+
+| Component | Cost |
+|---|---|
+| Daily market data (yfinance) | **$0** |
+| Weekly watchlist AI review (Claude Sonnet) | ~$0.02 / week |
+| Order placement via Robinhood MCP | ~$0.10 / trade |
+| WhatsApp notifications (Twilio sandbox) | **$0** |
+
+Running the agent every day costs essentially nothing unless a trade fires.
+
+---
+
+## Position sizing (designed for a $250 account)
+
+All percentages scale automatically to any account size.
+
+| Parameter | Value |
+|---|---|
+| Position size | 25–30% of account per trade |
+| Max concurrent positions | 2 |
+| Cash reserve (always kept back) | 15% |
+| Stop loss | 5–7% below entry |
+| Profit target | 10–20% above entry |
+| Minimum reward:risk required | 1.5:1 |
+| Drawdown breaker | −15% from peak → pause all new entries |
+
+With a $250 account: each position is ~$68, worst-case loss if both stop out = ~$9.60 (−3.9% of account).
+
+---
+
+## Screening pipeline (6 steps)
+
+1. **Universe scan** — active watchlist from WatchlistManager (starts with 19 symbols)
+2. **Technical screen** — price above MA50, RSI bounce or momentum, volume confirmation, support level within 5–7% for stop
+3. **Catalyst check** — excludes stocks with earnings within 7 days, or avg daily dollar volume < $50M
+4. **Risk/reward calc** — computes stop and target from support/resistance; rejects if R:R < 1.5
+5. **Macro gate** — SPY vs MA50 + VIX level → NORMAL / RAISE_BAR / NO_TRADE
+6. **Rank** — top 2 candidates by reward:risk ratio
 
 ---
 
 ## Project structure
 
 ```
-trading_agent/
-├── config.py              # All constants — adjust before running
-├── account_state.py       # Account value, drawdown, position limits
-├── research_engine.py     # 6-step daily research pipeline
-├── position_sizing.py     # Dollar sizing + bracket-price math
-├── wash_sale_tracker.py   # 30-day wash-sale log + gate
-├── trade_proposal.py      # Immutable proposal value object
-├── defensive_monitor.py   # Intraday VIX + position-swing circuit breakers
-├── reporting.py           # Daily/weekly/monthly reports + trade journal
-├── order_executor.py      # Robinhood MCP integration (swap-ready)
-├── main_agent.py          # Orchestration + CLI entry point
-└── tests/                 # pytest suite (no live MCP required)
-```
-
----
-
-## Prerequisites
-
-- Python 3.11+
-- `pytest` for tests
-- A running [Robinhood MCP server](https://github.com/YOUR_MCP_REPO) for live use
-
-```bash
-pip install pytest
+robinhood-mcp-trader/
+├── trading_agent/
+│   ├── config.py              # All constants — review before going live
+│   ├── yfinance_client.py     # Free market data (replaces expensive MCP data calls)
+│   ├── robinhood_mcp_client.py # Robinhood MCP — used only for order placement
+│   ├── research_engine.py     # 6-step screening pipeline
+│   ├── watchlist_manager.py   # Dynamic watchlist with weekly AI review
+│   ├── main_agent.py          # Orchestration + CLI entry point
+│   ├── order_executor.py      # Bracket order placement + integrity checks
+│   ├── account_state.py       # Cash, positions, drawdown tracking
+│   ├── position_sizing.py     # Dollar sizing + bracket-price math
+│   ├── sms_notifier.py        # WhatsApp approval flow (Twilio)
+│   ├── trade_proposal.py      # Immutable proposal value object
+│   ├── defensive_monitor.py   # Intraday VIX + position-swing circuit breakers
+│   ├── wash_sale_tracker.py   # 30-day wash-sale log + gate
+│   ├── reporting.py           # Daily report generation + trade journal
+│   └── tests/                 # pytest suite (no live connections required)
+├── run.bat                    # Manual launch (Windows)
+├── run_scheduled.bat          # Automated launch — used by Task Scheduler
+├── requirements.txt
+├── .env.example               # Template — copy to .env and fill in credentials
+└── logs/                      # Daily output files (gitignored)
 ```
 
 ---
 
 ## Setup
 
-1. **Clone the repo**
-   ```bash
-   git clone https://github.com/YOUR_USERNAME/robinhood-mcp-trader.git
-   cd robinhood-mcp-trader
-   ```
+### 1. Prerequisites
 
-2. **Configure credentials**
-   ```bash
-   cp .env.example .env
-   # Edit .env and fill in your Robinhood MCP credentials
-   ```
+- Python 3.11+
+- A Robinhood account with agentic trading enabled
+- A Twilio account (free trial works) for WhatsApp notifications
+- Claude Code CLI (for the Robinhood MCP connection)
 
-3. **Review config**  
-   Open `trading_agent/config.py` and verify all constants match your risk tolerance before connecting to a live account.
+```bash
+pip install -r requirements.txt
+```
 
-4. **Run the test suite** (no MCP required)
-   ```bash
-   pytest trading_agent/tests/ -v
-   ```
-   All tests must pass before proceeding to live use.
+### 2. Credentials
+
+```bash
+cp .env.example .env
+```
+
+Open `.env` and fill in:
+
+| Variable | Where to get it |
+|---|---|
+| `ANTHROPIC_API_KEY` | console.anthropic.com → API Keys |
+| `ROBINHOOD_MCP_TOKEN` | Auto-read from `~/.claude/.credentials.json` after connecting via Claude Code |
+| `TWILIO_ACCOUNT_SID` | console.twilio.com |
+| `TWILIO_AUTH_TOKEN` | console.twilio.com |
+| `TWILIO_WHATSAPP_FROM` | `whatsapp:+14155238886` (Twilio sandbox number) |
+| `YOUR_PHONE_NUMBER` | Your number in E.164 format e.g. `+12125551234` |
+
+### 3. Connect Robinhood MCP (one-time)
+
+Open Claude Code, run `/mcp`, find **robinhood-trading**, and connect. Claude Code keeps the token refreshed automatically — the agent reads it from `~/.claude/.credentials.json`.
+
+### 4. Set up WhatsApp notifications (one-time)
+
+1. Open WhatsApp and message **+1 (415) 523-8886**
+2. Send the join code shown in your Twilio console under Messaging → Try it out → Send a WhatsApp message
+3. You're now enrolled in the sandbox — the agent can message you
+
+### 5. Schedule automatic daily runs (Windows)
+
+Run once to register the 9:45 AM weekday task:
+
+```bash
+schtasks /create /tn "RobinhoodTradingAgent" /tr "\"%CD%\run_scheduled.bat\"" /sc weekly /d MON,TUE,WED,THU,FRI /st 09:45 /f
+```
+
+Your computer must be **on and not sleeping** at 9:45 AM for the task to fire.
 
 ---
 
-## Running in dry-run mode (recommended first step)
+## Running manually
 
-`config.py` has `DRY_RUN = True` by default. In this mode the agent runs the
-full research pipeline and generates proposals, but **no orders are sent** to
-Robinhood. Bracket order details are logged to stdout only.
+```bash
+run.bat
+```
+
+Or directly:
 
 ```bash
 python -m trading_agent.main_agent
 ```
 
-Run at least one full dry-run cycle and verify the proposals make sense before
-enabling live orders.
+---
+
+## Dry-run mode
+
+`DRY_RUN = True` in `config.py` (default). The full pipeline runs — research, WhatsApp notification, approval gate — but **no orders are sent to Robinhood**. Bracket order details are logged only.
+
+Run several dry-run cycles before going live. When satisfied:
+
+1. Open `trading_agent/config.py`
+2. Set `DRY_RUN = False`
+
+> **Note on bracket orders:** Robinhood MCP does not support native OCO (one-cancels-other) orders. The agent places three separate GTC orders (limit buy, stop-loss sell, profit-target sell). When one of the exit orders fills, the other must be cancelled. A mid-day monitoring task to handle this automatically is planned before the live flag is recommended.
 
 ---
 
-## Enabling live order placement
+## Dynamic watchlist
 
-Only after successful dry-run validation:
-
-1. Confirm your Robinhood MCP server supports the required order types (see
-   `order_executor.py` — note the OCO limitation comment).
-2. Set `DRY_RUN = False` in `config.py`.
-3. Human approval is still required for every new entry — the agent will prompt
-   via stdin (or your configured approval callback).
+The agent maintains its own watchlist state in `trading_agent/data/watchlist_state.json`. Every Friday, it calls Claude Sonnet to review the past week's screening results and decide which symbols to keep, remove, or add. You never edit the watchlist manually — performance data drives the decisions.
 
 ---
 
-## Key safety constraints
+## Safety constraints (enforced in code)
 
-These are non-negotiable and enforced in code:
-
-- **No new order without human approval** — `place_bracket_order()` checks
-  proposal expiry and current price range before sending anything.
-- **Hard stop-loss at broker level** — stop orders are placed immediately at
-  entry; the agent never relies solely on monitoring for downside protection.
-- **Max 2 concurrent positions, max 1 leveraged ETF** — enforced in
-  `can_open_new_position()`.
-- **Drawdown breaker at −15% from peak** — automatically pauses all new entries.
-- **Hard earnings exclusion** — any symbol with earnings within 7 days is
-  excluded regardless of setup quality.
-- **Bracket integrity checks** — every monitoring cycle verifies stop + target
-  orders are live; missing stop triggers an EMERGENCY log.
-
----
-
-## Phased design
-
-**Stage 1 (this repo):** Human approves every entry. Automated bracket exits.
-$250 starting capital. Max 2 positions.
-
-**Stage 2 (future):** After ~3 months of Stage 1 data showing positive
-expectancy, consider auto-approval for highest-conviction setups with tighter
-rules, and position sizing based on Kelly/fixed-fraction.
-
----
-
-## Contributing
-
-Contributions are welcome. Please open an issue before submitting large
-changes. Focus areas: improving the research pipeline's signal quality,
-better support for real Robinhood MCP OCO orders, and alternative data sources
-for market data.
-
-Bug reports and tests for edge cases are especially appreciated.
+- No order placed without your WhatsApp approval
+- Hard stop-loss at broker level immediately at entry — never relies on monitoring alone
+- Max 2 concurrent positions, max 1 leveraged ETF
+- Drawdown breaker at −15% from peak automatically halts new entries
+- Earnings exclusion within 7-day window
+- Minimum $50M daily dollar volume floor
+- Bracket integrity check each monitoring cycle — missing stop triggers emergency alert
 
 ---
 
