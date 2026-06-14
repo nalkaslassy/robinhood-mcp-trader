@@ -407,7 +407,7 @@ def risk_reward_calc(
     target_price = round(entry * (1 + target_pct), 4)
     rr_ratio = round(target_pct / stop_pct, 4) if stop_pct > 0 else 0.0
 
-    passes = rr_ratio >= 0.5  # reward must be at least half the risk (risk <= reward is ideal)
+    passes = rr_ratio >= 1.5  # minimum 1.5:1 reward:risk for positive expectancy
 
     return RiskRewardResult(
         symbol=symbol,

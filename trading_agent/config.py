@@ -28,8 +28,8 @@ MAX_LEVERAGED_ETF_POSITIONS = 1
 # ---------------------------------------------------------------------------
 STOP_LOSS_PCT_MIN    = 0.05   # 5%
 STOP_LOSS_PCT_MAX    = 0.07   # 7%
-PROFIT_TARGET_PCT_MIN = 0.02  # 2%
-PROFIT_TARGET_PCT_MAX = 0.04  # 4%
+PROFIT_TARGET_PCT_MIN = 0.10  # 10%  — must exceed stop loss for positive expectancy
+PROFIT_TARGET_PCT_MAX = 0.20  # 20%  — swing trades targeting 10-20% moves
 
 # ---------------------------------------------------------------------------
 # Circuit breakers
