@@ -1,6 +1,9 @@
 # Credentials — never commit
 .env
 
+# VS Code local history (may contain snapshots of .env with real credentials)
+.history/
+
 # Trade journal and account data
 trading_agent/data/
 *.jsonl

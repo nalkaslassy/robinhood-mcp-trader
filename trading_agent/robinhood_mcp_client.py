@@ -18,7 +18,9 @@ from __future__ import annotations
 import json
 import logging
 import os
+import time
 from datetime import date, timedelta
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import anthropic
@@ -27,22 +29,54 @@ from trading_agent import config
 
 logger = logging.getLogger(__name__)
 
+_CREDENTIALS_PATH = Path.home() / ".claude" / ".credentials.json"
+_MCP_SERVER_NAME  = "robinhood-trading"
+
 
 # ---------------------------------------------------------------------------
-# Helpers
+# Token resolution — prefers live credentials.json, falls back to .env
 # ---------------------------------------------------------------------------
+
+def _get_token() -> str:
+    """
+    Read the Robinhood MCP access token.
+    Tries ~/.claude/.credentials.json first (kept fresh by Claude Code),
+    then falls back to the ROBINHOOD_MCP_TOKEN env var.
+    """
+    if _CREDENTIALS_PATH.exists():
+        try:
+            creds = json.loads(_CREDENTIALS_PATH.read_text(encoding="utf-8"))
+            mcp_oauth = creds.get("mcpOAuth", {})
+            for key, entry in mcp_oauth.items():
+                if key.startswith(_MCP_SERVER_NAME):
+                    token = entry.get("accessToken", "")
+                    expires_at = entry.get("expiresAt", 0)
+                    # expiresAt is in milliseconds
+                    if token and expires_at > time.time() * 1000:
+                        return token
+                    if token:
+                        logger.warning(
+                            "Robinhood token in credentials.json is expired. "
+                            "Run `claude /mcp` → robinhood-trading → Reconnect to refresh."
+                        )
+        except Exception as e:
+            logger.debug("Could not read credentials.json: %s", e)
+
+    token = os.environ.get("ROBINHOOD_MCP_TOKEN", "")
+    if not token or token == "your_robinhood_mcp_token_here":
+        raise EnvironmentError(
+            "No valid Robinhood MCP token found.\n"
+            "Run: claude → /mcp → robinhood-trading → Reconnect"
+        )
+    return token
+
 
 def _build_mcp_config() -> Dict:
-    token = os.environ.get("ROBINHOOD_MCP_TOKEN", "")
-    if not token:
-        raise EnvironmentError(
-            "ROBINHOOD_MCP_TOKEN is not set. Run setup_auth.py first."
-        )
     return {
         "type": "url",
         "url": "https://agent.robinhood.com/mcp/trading",
         "name": "robinhood",
-        "authorization_token": token,
+        "authorization_token": _get_token(),
     }
 
 

@@ -29,7 +29,8 @@ import webbrowser
 from pathlib import Path
 
 MCP_URL    = "https://agent.robinhood.com/mcp/trading"
-REDIRECT   = "http://localhost:8080/callback"
+REDIRECT   = "http://localhost:3118/callback"
+CLIENT_ID  = "LtLiNmbs9owbYfWgBlC68Z2V-claude"
 ENV_FILE   = Path(".env")
 TOKEN_KEY  = "ROBINHOOD_MCP_TOKEN"
 
@@ -154,12 +155,7 @@ def main():
     # Robinhood's OAuth client_id for Claude / third-party agents
     # This may need to be obtained from Robinhood's developer docs.
     # Check https://robinhood.com/us/en/support/articles/agentic-trading-overview/
-    client_id = os.environ.get("ROBINHOOD_CLIENT_ID", "")
-    if not client_id:
-        client_id = input("Enter your Robinhood OAuth client_id (from Robinhood developer portal): ").strip()
-        if not client_id:
-            print("\n⚠️  client_id is required. Check Robinhood's agentic trading docs for your client_id.")
-            return
+    client_id = os.environ.get("ROBINHOOD_CLIENT_ID", CLIENT_ID)
 
     verifier, challenge = _pkce_pair()
     state = secrets.token_urlsafe(16)
