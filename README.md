@@ -12,17 +12,30 @@
 
 ## What it does
 
-A fully-automated Python swing-trading agent for a small Robinhood account. Every weekday morning it:
+A fully-automated Python swing-trading research agent for a small Robinhood account. Every weekday it:
 
 1. Pulls free market data via **yfinance** (no API cost)
-2. Runs a 6-step technical screening pipeline on a 19-symbol watchlist
+2. Runs a 6-step technical screening pipeline on a 17-symbol watchlist
 3. Checks macro conditions (SPY trend + VIX level)
 4. If a stock passes all screens → sends you a **WhatsApp message** with the trade details
 5. You reply **YES** or **NO** from your phone
 6. On YES → places a bracket order on Robinhood (limit buy + stop-loss + profit target)
 7. Saves a daily log to `logs/YYYYMMDD.txt`
 
-The agent runs automatically at 9:45 AM Mon–Fri via **Windows Task Scheduler** — no manual action required.
+If no setups are found, it sends a brief WhatsApp summary so you know it ran.
+
+---
+
+## Automated schedule (Windows Task Scheduler)
+
+| Time | Task | What it does |
+|---|---|---|
+| 9:45 AM Mon–Fri | Research scan | Full pipeline — screens all symbols, sends proposals |
+| 1:00 PM Mon–Fri | Midday research scan | Second look — catches setups that develop after the open |
+| 12:30 PM Mon–Fri | Bracket monitor | Cancels orphaned exit orders, verifies all stops are active |
+| 3:30 PM Mon–Fri | Bracket monitor | Same check before close |
+
+Your computer must be **on and not sleeping** for scheduled tasks to fire.
 
 ---
 
@@ -59,12 +72,32 @@ With a $250 account: each position is ~$68, worst-case loss if both stop out = ~
 
 ## Screening pipeline (6 steps)
 
-1. **Universe scan** — active watchlist from WatchlistManager (starts with 19 symbols)
-2. **Technical screen** — price above MA50, RSI bounce or momentum, volume confirmation, support level within 5–7% for stop
+1. **Universe scan** — active watchlist from WatchlistManager (starts with 17 symbols)
+2. **Technical screen** — price above MA50, RSI momentum (RSI > 50 and rising), volume confirmation, support level within 5–7% for stop placement
 3. **Catalyst check** — excludes stocks with earnings within 7 days, or avg daily dollar volume < $50M
 4. **Risk/reward calc** — computes stop and target from support/resistance; rejects if R:R < 1.5
 5. **Macro gate** — SPY vs MA50 + VIX level → NORMAL / RAISE_BAR / NO_TRADE
 6. **Rank** — top 2 candidates by reward:risk ratio
+
+### Signal rationale (from backtesting)
+A 2-year walk-forward backtest over 500+ trading days produced these findings:
+
+- **RSI momentum** (RSI > 50, rising): 54 signals, **41% win rate** — the primary entry signal
+- **RSI bounce** (cross up through 30 while in uptrend): 0 signals — logically contradictory with the uptrend requirement, removed
+- **COIN**: 8% win rate over 13 signals → removed from watchlist
+- **AVGO**: 0% win rate over 3 signals → removed from watchlist
+- Overall: 76 signals / 2 years, 32.9% win rate, **+0.91% expectancy per trade**
+
+---
+
+## Bracket order monitoring
+
+Robinhood MCP does not support native OCO (one-cancels-other) orders. The agent places three separate GTC orders (limit buy, stop-loss sell, profit-target sell). When one exit order fills, the other remains open.
+
+The 12:30 PM and 3:30 PM monitor tasks handle this automatically:
+- Detects any sell order with no matching position (orphaned after a fill)
+- Cancels the orphaned order before it can trigger an unintended short sale
+- Sends a WhatsApp alert if an emergency is found
 
 ---
 
@@ -88,8 +121,9 @@ robinhood-mcp-trader/
 │   ├── wash_sale_tracker.py   # 30-day wash-sale log + gate
 │   ├── reporting.py           # Daily report generation + trade journal
 │   └── tests/                 # pytest suite (no live connections required)
-├── run.bat                    # Manual launch (Windows)
-├── run_scheduled.bat          # Automated launch — used by Task Scheduler
+├── backtest.py                # Walk-forward backtester using historical yfinance data
+├── run_scheduled.bat          # Research mode — used by Task Scheduler (9:45 AM + 1 PM)
+├── run_monitor.bat            # Monitor mode — used by Task Scheduler (12:30 PM + 3:30 PM)
 ├── requirements.txt
 ├── .env.example               # Template — copy to .env and fill in credentials
 └── logs/                      # Daily output files (gitignored)
@@ -139,26 +173,34 @@ Open Claude Code, run `/mcp`, find **robinhood-trading**, and connect. Claude Co
 
 ### 5. Schedule automatic daily runs (Windows)
 
-Run once to register the 9:45 AM weekday task:
+Run these once to register all four tasks:
 
 ```bash
-schtasks /create /tn "RobinhoodTradingAgent" /tr "\"%CD%\run_scheduled.bat\"" /sc weekly /d MON,TUE,WED,THU,FRI /st 09:45 /f
+# Morning research scan — 9:45 AM
+schtasks /create /tn "RobinhoodAgent-Morning" /tr "C:\full\path\to\run_scheduled.bat" /sc WEEKLY /d MON,TUE,WED,THU,FRI /st 09:45 /f
+
+# Midday research scan — 1:00 PM
+schtasks /create /tn "RobinhoodAgent-Midday" /tr "C:\full\path\to\run_scheduled.bat" /sc WEEKLY /d MON,TUE,WED,THU,FRI /st 13:00 /f
+
+# Bracket monitor — 12:30 PM
+schtasks /create /tn "RobinhoodAgent-Monitor1230" /tr "C:\full\path\to\run_monitor.bat" /sc WEEKLY /d MON,TUE,WED,THU,FRI /st 12:30 /f
+
+# Bracket monitor — 3:30 PM
+schtasks /create /tn "RobinhoodAgent-Monitor1530" /tr "C:\full\path\to\run_monitor.bat" /sc WEEKLY /d MON,TUE,WED,THU,FRI /st 15:30 /f
 ```
 
-Your computer must be **on and not sleeping** at 9:45 AM for the task to fire.
+Replace `C:\full\path\to\` with the actual path to your project folder.
 
 ---
 
 ## Running manually
 
 ```bash
-run.bat
-```
-
-Or directly:
-
-```bash
+# Research mode
 python -m trading_agent.main_agent
+
+# Monitor mode
+python -m trading_agent.main_agent monitor
 ```
 
 ---
@@ -172,13 +214,13 @@ Run several dry-run cycles before going live. When satisfied:
 1. Open `trading_agent/config.py`
 2. Set `DRY_RUN = False`
 
-> **Note on bracket orders:** Robinhood MCP does not support native OCO (one-cancels-other) orders. The agent places three separate GTC orders (limit buy, stop-loss sell, profit-target sell). When one of the exit orders fills, the other must be cancelled. A mid-day monitoring task to handle this automatically is planned before the live flag is recommended.
-
 ---
 
 ## Dynamic watchlist
 
 The agent maintains its own watchlist state in `trading_agent/data/watchlist_state.json`. Every Friday, it calls Claude Sonnet to review the past week's screening results and decide which symbols to keep, remove, or add. You never edit the watchlist manually — performance data drives the decisions.
+
+Starting symbols: AAPL, MSFT, NVDA, AMD, TSLA, META, GOOGL, AMZN, SPY, QQQ, SOXL, TQQQ, XLE, XLF, NFLX, PLTR, SMCI
 
 ---
 
@@ -191,6 +233,18 @@ The agent maintains its own watchlist state in `trading_agent/data/watchlist_sta
 - Earnings exclusion within 7-day window
 - Minimum $50M daily dollar volume floor
 - Bracket integrity check each monitoring cycle — missing stop triggers emergency alert
+
+---
+
+## Backtesting
+
+Run `backtest.py` to evaluate signal quality over 2 years of history:
+
+```bash
+python backtest.py
+```
+
+Uses the exact same screening logic as the live agent — no code duplication, no look-ahead bias. Outputs win rate, expectancy, and per-symbol breakdown so you can evaluate changes before deploying them.
 
 ---
 
