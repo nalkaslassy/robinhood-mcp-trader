@@ -381,28 +381,38 @@ def risk_reward_calc(
             ),
         )
 
-    # Use resistance as target if it falls within the target range; else clamp
-    if technical.resistance_level is not None:
-        raw_target_pct = (technical.resistance_level - entry) / entry
-        target_pct = max(
-            config.PROFIT_TARGET_PCT_MIN,
-            min(config.PROFIT_TARGET_PCT_MAX, raw_target_pct),
-        )
-    else:
-        target_pct = config.PROFIT_TARGET_PCT_MIN  # conservative default
-
-    if not (config.PROFIT_TARGET_PCT_MIN <= target_pct <= config.PROFIT_TARGET_PCT_MAX):
+    # Target is the actual resistance level — no artificial floors.
+    # Reject if resistance is too close, too far, or not found at all.
+    if technical.resistance_level is None:
         return RiskRewardResult(
             symbol=symbol,
             entry_price=entry,
             stop_price=round(entry * (1 - stop_pct), 4),
             target_price=0.0,
             stop_pct=stop_pct,
-            target_pct=target_pct,
+            target_pct=0.0,
             reward_risk_ratio=0.0,
             passes=False,
-            exclusion_reason=f"Target distance {target_pct:.1%} outside valid range",
+            exclusion_reason="No resistance level found — cannot set a target",
         )
+
+    raw_target_pct = (technical.resistance_level - entry) / entry
+
+    if raw_target_pct < config.PROFIT_TARGET_PCT_MIN:
+        return RiskRewardResult(
+            symbol=symbol,
+            entry_price=entry,
+            stop_price=round(entry * (1 - stop_pct), 4),
+            target_price=0.0,
+            stop_pct=stop_pct,
+            target_pct=raw_target_pct,
+            reward_risk_ratio=0.0,
+            passes=False,
+            exclusion_reason=f"Resistance too close ({raw_target_pct:.1%}) — not worth the trade",
+        )
+
+    # Cap at maximum but never invent upside that isn't there
+    target_pct = min(config.PROFIT_TARGET_PCT_MAX, raw_target_pct)
 
     stop_price = round(entry * (1 - stop_pct), 4)
     target_price = round(entry * (1 + target_pct), 4)

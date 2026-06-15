@@ -30,8 +30,8 @@ from trading_agent.research_engine import (
 SYMBOLS      = config.WATCHLIST_SEED
 TEST_YEARS   = 2          # how far back to look for signals
 WARMUP_DAYS  = 80         # trading days needed before first signal (for MA50)
-TARGET_PCT   = 0.15       # exit at +15% (midpoint of 10-20% range)
-STOP_PCT     = 0.06       # exit at -6%  (midpoint of 5-7% range)
+TARGET_PCT   = 0.08       # exit at +8%  (midpoint of 5-15% range)
+STOP_PCT     = 0.05       # exit at -5%  (midpoint of 3-8% range)
 MAX_HOLD     = 20         # max trading days to hold before forced exit
 MIN_RR       = 1.5        # minimum reward:risk (same as live config)
 

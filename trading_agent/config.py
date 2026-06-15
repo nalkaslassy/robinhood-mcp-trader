@@ -26,10 +26,10 @@ MAX_LEVERAGED_ETF_POSITIONS = 1
 # ---------------------------------------------------------------------------
 # Exit bracket bounds
 # ---------------------------------------------------------------------------
-STOP_LOSS_PCT_MIN    = 0.05   # 5%
-STOP_LOSS_PCT_MAX    = 0.07   # 7%
-PROFIT_TARGET_PCT_MIN = 0.10  # 10%  — must exceed stop loss for positive expectancy
-PROFIT_TARGET_PCT_MAX = 0.20  # 20%  — swing trades targeting 10-20% moves
+STOP_LOSS_PCT_MIN    = 0.03   # 3%  — below this gets hit by normal daily noise
+STOP_LOSS_PCT_MAX    = 0.08   # 8%  — above this risks too much per trade
+PROFIT_TARGET_PCT_MIN = 0.05  # 5%  — below this isn't worth the trade
+PROFIT_TARGET_PCT_MAX = 0.15  # 15% — above this is unrealistic for a 4-week swing
 
 # ---------------------------------------------------------------------------
 # Circuit breakers
