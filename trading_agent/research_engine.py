@@ -520,7 +520,17 @@ def run_daily_research(
             continue
 
         if not tech.passes_screen:
-            near_misses.append({"symbol": symbol, "reason": f"technical: {tech.exclusion_reason}"})
+            above_ma50_pct = round((tech.current_price / tech.ma50 - 1) * 100, 1) if tech.ma50 > 0 else None
+            support_pct    = round((tech.current_price - tech.support_level) / tech.current_price * 100, 1) if tech.support_level else None
+            criteria_passed = sum([tech.is_uptrend, tech.rsi_momentum, tech.volume_confirmed, tech.support_level is not None])
+            near_misses.append({
+                "symbol":         symbol,
+                "reason":         f"technical: {tech.exclusion_reason}",
+                "rsi":            round(tech.rsi, 1),
+                "above_ma50_pct": above_ma50_pct,
+                "support_pct":    support_pct,
+                "criteria_passed": criteria_passed,
+            })
             continue
 
         try:

@@ -144,8 +144,8 @@ class TradingAgent:
             for candidate in report.ranked_candidates:
                 self._process_candidate(candidate, snap.total_value)
         else:
-            # No setups today — send a brief daily summary so you know it ran
-            top_reasons = {}
+            # No setups today — send a summary with the closest miss for easy verification
+            top_reasons: dict = {}
             for nm in report.near_misses:
                 reason = nm["reason"].split(":")[1].strip() if ":" in nm["reason"] else nm["reason"]
                 first_clause = reason.split(";")[0].strip()
@@ -154,11 +154,25 @@ class TradingAgent:
                 f"{count}x {r}" for r, count in
                 sorted(top_reasons.items(), key=lambda x: -x[1])[:3]
             )
+
+            # Find the technical near-miss that passed the most criteria
+            tech_misses = [nm for nm in report.near_misses if nm["reason"].startswith("technical:") and "criteria_passed" in nm]
+            closest = max(tech_misses, key=lambda nm: nm["criteria_passed"]) if tech_misses else None
+            closest_line = ""
+            if closest:
+                rsi   = closest.get("rsi", "?")
+                above = closest.get("above_ma50_pct")
+                sup   = closest.get("support_pct")
+                trend = f"{abs(above):.1f}% {'above' if above >= 0 else 'below'} MA50" if above is not None else "MA50 unknown"
+                sup_s = f"support {sup:.1f}% away" if sup is not None else "no support found"
+                closest_line = f"\nClosest: {closest['symbol']} — RSI={rsi}, {trend}, {sup_s}"
+
             self._notifier.send_alert(
                 f"Daily scan complete — no setups today.\n"
                 f"Screened {len(report.near_misses)} stocks | "
                 f"Macro: {report.macro.state.value} | VIX={report.macro.vix_level:.1f}\n"
                 f"Common reasons: {reason_summary}"
+                f"{closest_line}"
             )
 
         return report
