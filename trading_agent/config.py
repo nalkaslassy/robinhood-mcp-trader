@@ -64,11 +64,12 @@ WASH_SALE_WINDOW_DAYS = 30
 # These are the starting symbols; the research agent adds/removes from here.
 # ---------------------------------------------------------------------------
 WATCHLIST_SEED = [
-    "AAPL", "MSFT", "NVDA", "AMD",  "TSLA", "META", "GOOGL", "AMZN",
+    "NVDA", "AMD",  "TSLA", "META", "AMZN",
     "SPY",  "QQQ",  "SOXL", "TQQQ", "XLE",  "XLF",  "NFLX",
     "PLTR", "SMCI",
-    # Removed: COIN  (8% win rate over 13 backtest signals — consistently bad fit)
+    # Removed: COIN  (8% win rate over 13 backtest signals)
     # Removed: AVGO  (0% win rate over 3 backtest signals)
+    # Removed: AAPL, MSFT, GOOGL (0% win rate — don't move enough to hit 5% target)
 ]
 
 # Always included regardless of watchlist state — needed for macro checks

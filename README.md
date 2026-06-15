@@ -61,12 +61,13 @@ All percentages scale automatically to any account size.
 | Position size | 25–30% of account per trade |
 | Max concurrent positions | 2 |
 | Cash reserve (always kept back) | 15% |
-| Stop loss | 5–7% below entry |
-| Profit target | 10–20% above entry |
+| Stop loss | 3–8% below entry (based on nearest support) |
+| Profit target | 5–15% above entry (based on nearest resistance) |
 | Minimum reward:risk required | 1.5:1 |
 | Drawdown breaker | −15% from peak → pause all new entries |
 
-With a $250 account: each position is ~$68, worst-case loss if both stop out = ~$9.60 (−3.9% of account).
+With a $250 account: each position is ~$68, worst-case loss if both stop out = ~$8.16 (−3.3% of account).
+Targets are set at actual resistance levels — never invented. If no valid resistance exists, the trade is rejected.
 
 ---
 
@@ -80,13 +81,13 @@ With a $250 account: each position is ~$68, worst-case loss if both stop out = ~
 6. **Rank** — top 2 candidates by reward:risk ratio
 
 ### Signal rationale (from backtesting)
-A 2-year walk-forward backtest over 500+ trading days produced these findings:
+A 2-year walk-forward backtest over 500 trading days produced these findings:
 
-- **RSI momentum** (RSI > 50, rising): 54 signals, **41% win rate** — the primary entry signal
-- **RSI bounce** (cross up through 30 while in uptrend): 0 signals — logically contradictory with the uptrend requirement, removed
-- **COIN**: 8% win rate over 13 signals → removed from watchlist
-- **AVGO**: 0% win rate over 3 signals → removed from watchlist
-- Overall: 76 signals / 2 years, 32.9% win rate, **+0.91% expectancy per trade**
+- **RSI momentum** (RSI > 50, rising): 141 signals, **44% win rate** — the only entry signal
+- **RSI bounce** (cross up through 30 while in uptrend): 0 signals — removed (logically contradictory with uptrend requirement)
+- Overall: 179 signals / 2 years, 43.6% win rate, **+0.66% expectancy per trade**, avg hold **4.5 days**
+- Best performers: SOXL 58%, TSLA 58%, NFLX 50%
+- Removed from watchlist based on backtest data: COIN (8%), AVGO (0%), AAPL (0%), MSFT (0%), GOOGL (0%) — these don't move enough to reliably hit a 5% target
 
 ---
 
@@ -220,7 +221,9 @@ Run several dry-run cycles before going live. When satisfied:
 
 The agent maintains its own watchlist state in `trading_agent/data/watchlist_state.json`. Every Friday, it calls Claude Sonnet to review the past week's screening results and decide which symbols to keep, remove, or add. You never edit the watchlist manually — performance data drives the decisions.
 
-Starting symbols: AAPL, MSFT, NVDA, AMD, TSLA, META, GOOGL, AMZN, SPY, QQQ, SOXL, TQQQ, XLE, XLF, NFLX, PLTR, SMCI
+Starting symbols: NVDA, AMD, TSLA, META, AMZN, SPY, QQQ, SOXL, TQQQ, XLE, XLF, NFLX, PLTR, SMCI
+
+Removed based on backtesting: AAPL, MSFT, GOOGL (0% win rate — insufficient volatility), COIN (8%), AVGO (0%)
 
 ---
 
