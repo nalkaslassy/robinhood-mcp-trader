@@ -102,7 +102,7 @@ def _call_robinhood(
         max_tokens=max_tokens,
         betas=["mcp-client-2025-04-04"],
         mcp_servers=[_build_mcp_config()],
-        timeout=90,
+        timeout=30,
         messages=[
             {
                 "role": "user",

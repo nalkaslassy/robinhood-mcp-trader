@@ -249,6 +249,10 @@ class TradingAgent:
         """
         logger.info("=== Mid-day bracket monitor ===")
 
+        if config.DRY_RUN:
+            logger.info("DRY_RUN=True — no real orders to monitor, skipping Robinhood check.")
+            return
+
         try:
             positions    = self._executor.check_open_positions()
             open_orders  = self._executor.check_open_orders()
@@ -447,9 +451,16 @@ def _build_live_agent() -> TradingAgent:
 
     claude = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
 
+    # Separate client for MCP order calls: no auto-retries so a Robinhood
+    # timeout fails in one attempt (~30s) instead of 3 × 90s = 4.5 minutes.
+    order_claude = anthropic.Anthropic(
+        api_key=os.environ["ANTHROPIC_API_KEY"],
+        max_retries=0,
+    )
+
     # Free data via yfinance — no API cost for daily research
     market_data  = YFinanceDataClient()
-    order_client = RobinhoodOrderClient(claude=claude)
+    order_client = RobinhoodOrderClient(claude=order_claude)
     notifier     = SMSNotifier()
     watchlist    = WatchlistManager(anthropic_client=claude)
 
