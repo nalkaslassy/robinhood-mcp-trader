@@ -217,6 +217,84 @@ class TradingAgent:
             )
 
     # ------------------------------------------------------------------
+    # Mid-day bracket monitor — run at 12:30 PM and 3:30 PM
+    # ------------------------------------------------------------------
+
+    def run_midday_monitor(self):
+        """
+        Cancels orphaned exit orders and alerts on missing stops.
+
+        Robinhood has no native OCO support, so after a stop or target fills,
+        the other order remains open with no shares behind it.  This job runs
+        twice a day to detect and cancel those orphaned orders before they
+        cause an unintended short sale.
+        """
+        logger.info("=== Mid-day bracket monitor ===")
+
+        try:
+            positions    = self._executor.check_open_positions()
+            open_orders  = self._executor.check_open_orders()
+        except Exception as e:
+            logger.error("Could not fetch positions/orders: %s", e)
+            self._notifier.send_alert(f"Monitor error — could not reach Robinhood: {e}")
+            return
+
+        position_symbols = {p.symbol for p in positions}
+        cancelled: List[str] = []
+        emergencies: List[str] = []
+
+        # Cancel any sell order for a symbol where we hold no shares
+        for order in open_orders:
+            symbol     = order.get("symbol", "")
+            side       = order.get("side", "")
+            order_id   = order.get("id", "")
+            order_type = order.get("type", "")
+
+            if side != "sell" or symbol in position_symbols:
+                continue
+
+            logger.warning(
+                "Orphaned %s sell order for %s (no position held) — cancelling %s",
+                order_type, symbol, order_id,
+            )
+            try:
+                if not config.DRY_RUN:
+                    self._executor._client.cancel_order(order_id)
+                cancelled.append(f"{symbol} {order_type}")
+                logger.info("Cancelled orphaned order %s", order_id)
+            except Exception as e:
+                msg = f"FAILED to cancel orphaned {symbol} order {order_id}: {e}"
+                logger.error(msg)
+                emergencies.append(msg)
+
+        # Verify every held position still has a stop order
+        for position in positions:
+            result = self._executor.check_bracket_integrity(position, open_orders)
+            if result.emergency:
+                emergencies.append(result.emergency_reason)
+            elif not result.stop_order_active:
+                emergencies.append(
+                    f"{position.symbol} has NO active stop order — intervene manually!"
+                )
+
+        # Send WhatsApp summary
+        if cancelled:
+            self._notifier.send_alert(
+                f"Mid-day cleanup: cancelled {len(cancelled)} orphaned order(s): "
+                + ", ".join(cancelled)
+            )
+        for msg in emergencies:
+            self._notifier.send_alert(f"BRACKET EMERGENCY: {msg}")
+
+        if not cancelled and not emergencies:
+            if positions:
+                logger.info(
+                    "Bracket OK — %d position(s), all stops confirmed.", len(positions)
+                )
+            else:
+                logger.info("No open positions — nothing to monitor.")
+
+    # ------------------------------------------------------------------
     # Intraday monitoring cycle (call 2-3x during market hours)
     # ------------------------------------------------------------------
 
@@ -380,11 +458,18 @@ def main():
     except Exception:
         pass
 
-    logger.info("Trading agent starting (DRY_RUN=%s)", config.DRY_RUN)
-    agent = _build_live_agent()
-    report = agent.run_morning_research()
-    if report:
-        agent.run_end_of_day(report)
+    mode = sys.argv[1] if len(sys.argv) > 1 else "research"
+
+    if mode == "monitor":
+        logger.info("Mid-day monitor starting (DRY_RUN=%s)", config.DRY_RUN)
+        agent = _build_live_agent()
+        agent.run_midday_monitor()
+    else:
+        logger.info("Trading agent starting (DRY_RUN=%s)", config.DRY_RUN)
+        agent = _build_live_agent()
+        report = agent.run_morning_research()
+        if report:
+            agent.run_end_of_day(report)
 
 
 if __name__ == "__main__":
