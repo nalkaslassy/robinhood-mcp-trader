@@ -252,8 +252,9 @@ def technical_screen(symbol: str, client: MarketDataClient) -> TechnicalSignal:
     rsi_momentum = _detect_rsi_momentum(rsi_vals)
     volume_confirmed = avg_vol > 0 and recent_vol >= avg_vol
 
-    # Pass requires: uptrend + (bounce OR momentum OR volume) + support exists for valid stop
-    momentum_signal = rsi_bounce or rsi_momentum
+    # RSI bounce (cross up through 30 while in uptrend) is contradictory — never fires.
+    # Only RSI momentum (>50, rising) and volume confirmation are real signals.
+    momentum_signal = rsi_momentum
     has_volume = volume_confirmed
     has_valid_stop = (
         support is not None
@@ -467,8 +468,8 @@ def rank_candidates(
         rr: RiskRewardResult = c["risk_reward"]
 
         if macro.state == MacroState.RAISE_BAR:
-            # All four signals must be present
-            if not (tech.is_uptrend and (tech.rsi_bounce or tech.rsi_momentum)
+            # All four signals must be present (rsi_bounce excluded — never fires in uptrend)
+            if not (tech.is_uptrend and tech.rsi_momentum
                     and tech.volume_confirmed
                     and tech.support_level is not None):
                 continue
