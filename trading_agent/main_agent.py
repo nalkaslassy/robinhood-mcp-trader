@@ -140,8 +140,26 @@ class TradingAgent:
         if self._watchlist.should_run_weekly_review():
             self._run_weekly_watchlist_review()
 
-        for candidate in report.ranked_candidates:
-            self._process_candidate(candidate, snap.total_value)
+        if report.ranked_candidates:
+            for candidate in report.ranked_candidates:
+                self._process_candidate(candidate, snap.total_value)
+        else:
+            # No setups today — send a brief daily summary so you know it ran
+            top_reasons = {}
+            for nm in report.near_misses:
+                reason = nm["reason"].split(":")[1].strip() if ":" in nm["reason"] else nm["reason"]
+                first_clause = reason.split(";")[0].strip()
+                top_reasons[first_clause] = top_reasons.get(first_clause, 0) + 1
+            reason_summary = ", ".join(
+                f"{count}x {r}" for r, count in
+                sorted(top_reasons.items(), key=lambda x: -x[1])[:3]
+            )
+            self._notifier.send_alert(
+                f"Daily scan complete — no setups today.\n"
+                f"Screened {len(report.near_misses)} stocks | "
+                f"Macro: {report.macro.state.value} | VIX={report.macro.vix_level:.1f}\n"
+                f"Common reasons: {reason_summary}"
+            )
 
         return report
 
