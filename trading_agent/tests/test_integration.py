@@ -169,7 +169,8 @@ class TestScenarioClearQualifyingSetup:
             symbol="AAPL", current_price=100.0, ma20=97.0, ma50=92.0,
             rsi=60.0, avg_volume_20d=1e6, recent_volume=1.5e6,
             support_level=94.0, resistance_level=104.0,
-            is_uptrend=True, rsi_bounce=True, rsi_momentum=True,
+            atr=0.0, adx=None,
+            is_uptrend=True, is_trending=False, rsi_bounce=True, rsi_momentum=True,
             volume_confirmed=True, passes_screen=True,
         )
         rr = RiskRewardResult(

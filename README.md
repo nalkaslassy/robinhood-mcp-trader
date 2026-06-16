@@ -58,7 +58,7 @@ All percentages scale automatically to any account size.
 
 | Parameter | Value |
 |---|---|
-| Position size | 25–30% of account per trade |
+| Position size | 15–30% of account per trade (risk-based sizing) |
 | Max concurrent positions | 2 |
 | Cash reserve (always kept back) | 15% |
 | Stop loss | 3–8% below entry (based on nearest support) |
@@ -73,8 +73,8 @@ Targets are set at actual resistance levels — never invented. If no valid resi
 
 ## Screening pipeline (6 steps)
 
-1. **Universe scan** — active watchlist from WatchlistManager (starts with 17 symbols)
-2. **Technical screen** — price above MA50, RSI momentum (RSI > 50 and rising), volume confirmation, support level within 5–7% for stop placement
+1. **Universe scan** — active watchlist from WatchlistManager (starts with 14 symbols)
+2. **Technical screen** — price above MA50, RSI momentum (RSI > 50 and rising) **AND** volume confirmation (both required), support level within 3–8% for stop placement (50-day lookback)
 3. **Catalyst check** — excludes stocks with earnings within 7 days, or avg daily dollar volume < $50M
 4. **Risk/reward calc** — computes stop and target from support/resistance; rejects if R:R < 1.5
 5. **Macro gate** — SPY vs MA50 + VIX level → NORMAL / RAISE_BAR / NO_TRADE
@@ -83,10 +83,11 @@ Targets are set at actual resistance levels — never invented. If no valid resi
 ### Signal rationale (from backtesting)
 A 2-year walk-forward backtest over 500 trading days produced these findings:
 
-- **RSI momentum** (RSI > 50, rising): 141 signals, **44% win rate** — the only entry signal
-- **RSI bounce** (cross up through 30 while in uptrend): 0 signals — removed (logically contradictory with uptrend requirement)
-- Overall: 179 signals / 2 years, 43.6% win rate, **+0.66% expectancy per trade**, avg hold **4.5 days**
-- Best performers: SOXL 58%, TSLA 58%, NFLX 50%
+- **RSI momentum AND volume** (both required): 71 signals, **43.7% win rate**, +0.68% expectancy, only 1.4% forced exits
+- **RSI OR volume** (old logic): 179 signals, same win rate, but 13% forced exits — the AND requirement filters to cleaner setups at real support/resistance
+- **RSI bounce** (cross up from below 30 while in uptrend): 0 signals — removed (logically contradictory with uptrend requirement)
+- **ADX trend filter** (tested, not used as gate): improves false-positive filtering in theory but causes late-trend entries in practice — stored as informational field for future tuning
+- Best performers: SMCI 71%, TSLA 55%, SOXL 50%, NVDA 50%
 - Removed from watchlist based on backtest data: COIN (8%), AVGO (0%), AAPL (0%), MSFT (0%), GOOGL (0%) — these don't move enough to reliably hit a 5% target
 
 ---

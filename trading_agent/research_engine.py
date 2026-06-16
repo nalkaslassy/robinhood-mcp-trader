@@ -61,8 +61,11 @@ class TechnicalSignal:
     recent_volume: float
     support_level: Optional[float]
     resistance_level: Optional[float]
+    atr: float               # 14-day Average True Range
+    adx: Optional[float]     # 14-day ADX (None if insufficient data)
     # Gate flags
     is_uptrend: bool         # price > MA50
+    is_trending: bool        # ADX > 25
     rsi_bounce: bool         # RSI recently crossed up from below 30
     rsi_momentum: bool       # RSI > 50 with upward slope
     volume_confirmed: bool   # recent volume > avg_volume_20d
@@ -170,6 +173,81 @@ def _rsi_series(closes: List[float], period: int = 14) -> List[float]:
     return results
 
 
+def _atr_series(highs: List[float], lows: List[float], closes: List[float], period: int = 14) -> List[float]:
+    """Average True Range series using Wilder smoothing."""
+    if len(closes) < 2:
+        return []
+    trs = []
+    for i in range(1, len(closes)):
+        tr = max(
+            highs[i] - lows[i],
+            abs(highs[i] - closes[i - 1]),
+            abs(lows[i] - closes[i - 1]),
+        )
+        trs.append(tr)
+    if len(trs) < period:
+        return []
+    results = [sum(trs[:period]) / period]
+    for tr in trs[period:]:
+        results.append((results[-1] * (period - 1) + tr) / period)
+    return results
+
+
+def _adx(highs: List[float], lows: List[float], closes: List[float], period: int = 14) -> Optional[float]:
+    """
+    Wilder ADX. Returns the current ADX value or None if insufficient data.
+    ADX > 25 = trending, ADX < 20 = ranging/choppy.
+    """
+    if len(closes) < period * 2 + 1:
+        return None
+
+    plus_dm, minus_dm, trs = [], [], []
+    for i in range(1, len(closes)):
+        up   = highs[i] - highs[i - 1]
+        down = lows[i - 1] - lows[i]
+        plus_dm.append(up   if up > down and up > 0   else 0.0)
+        minus_dm.append(down if down > up and down > 0 else 0.0)
+        trs.append(max(
+            highs[i] - lows[i],
+            abs(highs[i] - closes[i - 1]),
+            abs(lows[i] - closes[i - 1]),
+        ))
+
+    def _wilder_smooth(values: List[float], p: int) -> List[float]:
+        if len(values) < p:
+            return []
+        smoothed = [sum(values[:p])]
+        for v in values[p:]:
+            smoothed.append(smoothed[-1] - smoothed[-1] / p + v)
+        return smoothed
+
+    s_tr   = _wilder_smooth(trs, period)
+    s_plus = _wilder_smooth(plus_dm, period)
+    s_minus = _wilder_smooth(minus_dm, period)
+
+    if not s_tr:
+        return None
+
+    dx_vals = []
+    for i in range(len(s_tr)):
+        if s_tr[i] == 0:
+            continue
+        plus_di  = 100 * s_plus[i]  / s_tr[i]
+        minus_di = 100 * s_minus[i] / s_tr[i]
+        denom = plus_di + minus_di
+        if denom == 0:
+            continue
+        dx_vals.append(100 * abs(plus_di - minus_di) / denom)
+
+    if len(dx_vals) < period:
+        return None
+
+    adx = sum(dx_vals[:period]) / period
+    for dx in dx_vals[period:]:
+        adx = (adx * (period - 1) + dx) / period
+    return round(adx, 2)
+
+
 def _detect_rsi_bounce(rsi_series: List[float], lookback: int = 5) -> bool:
     """
     True if within the last `lookback` bars, RSI crossed UP through 30
@@ -227,50 +305,58 @@ def scan_universe(watchlist_manager=None) -> List[str]:
 
 def technical_screen(symbol: str, client: MarketDataClient) -> TechnicalSignal:
     """Step 2 — compute technical indicators and assess pass/fail."""
-    history = client.get_price_history(symbol, days=60)
-    closes = [float(bar["close"]) for bar in history]
+    # 90 days keeps MA50 stable and gives 50-day S/R enough history
+    history = client.get_price_history(symbol, days=90)
+    closes  = [float(bar["close"])  for bar in history]
     volumes = [float(bar["volume"]) for bar in history]
-    highs = [float(bar["high"]) for bar in history]
-    lows = [float(bar["low"]) for bar in history]
+    highs   = [float(bar["high"])   for bar in history]
+    lows    = [float(bar["low"])    for bar in history]
 
     current_price = closes[-1] if closes else client.get_current_price(symbol)
 
     ma20 = _sma(closes, config.MA_SHORT_PERIOD) or 0.0
-    ma50 = _sma(closes, config.MA_LONG_PERIOD) or 0.0
+    ma50 = _sma(closes, config.MA_LONG_PERIOD)  or 0.0
 
-    rsi_vals = _rsi_series(closes, config.RSI_PERIOD)
+    rsi_vals    = _rsi_series(closes, config.RSI_PERIOD)
     current_rsi = rsi_vals[-1] if rsi_vals else 50.0
 
-    avg_vol = _sma(volumes, config.MA_SHORT_PERIOD) or 0.0
+    avg_vol    = _sma(volumes, config.MA_SHORT_PERIOD) or 0.0
     recent_vol = float(volumes[-1]) if volumes else 0.0
 
-    support = _find_support(highs, lows, current_price)
-    resistance = _find_resistance(highs, current_price)
+    # Compute ATR and ADX for informational fields (not used as gates)
+    atr_vals    = _atr_series(highs, lows, closes, config.RSI_PERIOD)
+    current_atr = atr_vals[-1] if atr_vals else 0.0
+    current_adx = _adx(highs, lows, closes, config.RSI_PERIOD)
+    is_trending = (current_adx is not None) and (current_adx >= config.ADX_TREND_THRESHOLD)
 
-    is_uptrend = (ma50 > 0) and (current_price > ma50)
-    rsi_bounce = _detect_rsi_bounce(rsi_vals)
-    rsi_momentum = _detect_rsi_momentum(rsi_vals)
+    # S/R uses 50-day lookback (up from 20) for more reliable structure
+    support    = _find_support(highs, lows, current_price, lookback=config.SR_LOOKBACK)
+    resistance = _find_resistance(highs, current_price,    lookback=config.SR_LOOKBACK)
+
+    is_uptrend       = (ma50 > 0) and (current_price > ma50)
+    rsi_bounce       = _detect_rsi_bounce(rsi_vals)
+    rsi_momentum     = _detect_rsi_momentum(rsi_vals)
     volume_confirmed = avg_vol > 0 and recent_vol >= avg_vol
 
-    # RSI bounce (cross up through 30 while in uptrend) is contradictory — never fires.
-    # Only RSI momentum (>50, rising) and volume confirmation are real signals.
-    momentum_signal = rsi_momentum
-    has_volume = volume_confirmed
+    # Stop is valid when a support level exists within the configured % range
     has_valid_stop = (
         support is not None
         and config.STOP_LOSS_PCT_MIN <= (current_price - support) / current_price <= config.STOP_LOSS_PCT_MAX
     )
 
-    passes = is_uptrend and (momentum_signal or has_volume) and has_valid_stop
+    # Both RSI momentum AND volume must confirm (not either/or)
+    passes = is_uptrend and rsi_momentum and volume_confirmed and has_valid_stop
     reason = ""
     if not passes:
         parts = []
         if not is_uptrend:
             parts.append("no uptrend (price below MA50)")
-        if not momentum_signal and not has_volume:
-            parts.append("no momentum or volume confirmation")
+        if not rsi_momentum:
+            parts.append("RSI not momentum (need >50 and rising)")
+        if not volume_confirmed:
+            parts.append("volume below 20-day average")
         if not has_valid_stop:
-            parts.append("no support within 5-7% stop range")
+            parts.append(f"no support within {config.STOP_LOSS_PCT_MIN:.0%}–{config.STOP_LOSS_PCT_MAX:.0%} stop range")
         reason = "; ".join(parts)
 
     return TechnicalSignal(
@@ -283,7 +369,10 @@ def technical_screen(symbol: str, client: MarketDataClient) -> TechnicalSignal:
         recent_volume=recent_vol,
         support_level=support,
         resistance_level=resistance,
+        atr=current_atr,
+        adx=current_adx,
         is_uptrend=is_uptrend,
+        is_trending=is_trending,
         rsi_bounce=rsi_bounce,
         rsi_momentum=rsi_momentum,
         volume_confirmed=volume_confirmed,

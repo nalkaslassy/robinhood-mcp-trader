@@ -100,9 +100,12 @@ WATCHLIST_MAX_ACTIVE = 60
 # ---------------------------------------------------------------------------
 # Technical indicator periods
 # ---------------------------------------------------------------------------
-RSI_PERIOD     = 14
+RSI_PERIOD      = 14
 MA_SHORT_PERIOD = 20
 MA_LONG_PERIOD  = 50
+
+ADX_TREND_THRESHOLD = 25   # ADX must exceed this to confirm a trend
+SR_LOOKBACK         = 50   # days used for support/resistance level search
 
 # ---------------------------------------------------------------------------
 # Data / persistence paths

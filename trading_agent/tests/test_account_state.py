@@ -73,10 +73,10 @@ class TestDrawdownBreaker:
 
 class TestPositionSizing:
     @pytest.mark.parametrize("account_value,expected_low,expected_high", [
-        (250.00, 62.50, 75.00),
-        (400.00, 100.00, 120.00),
-        (700.00, 175.00, 210.00),
-        (1200.00, 300.00, 360.00),
+        (250.00, 37.50, 75.00),
+        (400.00, 60.00, 120.00),
+        (700.00, 105.00, 210.00),
+        (1200.00, 180.00, 360.00),
     ])
     def test_position_size_range(self, account_value, expected_low, expected_high):
         mgr = _make_manager(cash=account_value)
@@ -131,12 +131,12 @@ class TestCanOpenNewPosition:
         assert ok is True
 
     def test_blocks_insufficient_cash_reserve(self):
-        # total_value=250, reserve=37.5, min_position=62.5, required=100 — give only 90
-        mgr = _make_manager(cash=90.0, peak_override=250.0)
-        # manually set total to 250 by adding a position worth 160
-        pos = _make_position(cur_price=160.0, qty=1.0)
+        # total_value=250, reserve=37.5 (15%), min_position=37.5 (15%), required=75 — give only 70
+        mgr = _make_manager(cash=70.0, peak_override=250.0)
+        # manually set total to 250 by adding a position worth 180
+        pos = _make_position(cur_price=180.0, qty=1.0)
         snap = mgr.get_snapshot()
-        snap.cash = 90.0
+        snap.cash = 70.0
         snap.positions = [pos]
         snap.peak_account_value = 250.0
         mgr._peak_value = 250.0

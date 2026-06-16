@@ -57,7 +57,8 @@ def _make_proposal(
         symbol=symbol, current_price=price, ma20=price*0.97, ma50=price*0.92,
         rsi=60.0, avg_volume_20d=1e6, recent_volume=1.5e6,
         support_level=price*(1-stop_pct), resistance_level=price*(1+target_pct),
-        is_uptrend=True, rsi_bounce=True, rsi_momentum=True,
+        atr=0.0, adx=None,
+        is_uptrend=True, is_trending=False, rsi_bounce=True, rsi_momentum=True,
         volume_confirmed=True, passes_screen=True,
     )
     rr = RiskRewardResult(

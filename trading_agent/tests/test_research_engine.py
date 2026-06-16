@@ -341,7 +341,10 @@ class TestRiskRewardCalc:
             recent_volume=1_200_000.0,
             support_level=support,
             resistance_level=resistance,
+            atr=0.0,
+            adx=None,
             is_uptrend=True,
+            is_trending=False,
             rsi_bounce=False,
             rsi_momentum=True,
             volume_confirmed=True,
@@ -349,34 +352,35 @@ class TestRiskRewardCalc:
         )
 
     def test_valid_setup(self):
-        # stop 6%, target 3% => rr=0.5
-        tech = self._make_tech(100.0, support=94.0, resistance=103.0)
+        # stop 6%, target 12% => rr=2.0 — resistance must be >= PROFIT_TARGET_PCT_MIN (5%) and R:R >= 1.5
+        tech = self._make_tech(100.0, support=94.0, resistance=112.0)
         rr = risk_reward_calc("TEST", tech)
         assert rr.passes is True
         assert abs(rr.stop_pct - 0.06) < 1e-9
         assert rr.reward_risk_ratio > 0
 
     def test_rejects_stop_too_tight(self):
-        # support only 3% below => stop_pct=0.03 < 5%
-        tech = self._make_tech(100.0, support=97.0, resistance=103.0)
+        # support only 2% below => stop_pct=0.02 < STOP_LOSS_PCT_MIN (3%)
+        tech = self._make_tech(100.0, support=98.0, resistance=108.0)
         rr = risk_reward_calc("TEST", tech)
         assert rr.passes is False
         assert "outside" in rr.exclusion_reason
 
     def test_rejects_stop_too_wide(self):
-        # support 9% below => stop_pct=0.09 > 7%
-        tech = self._make_tech(100.0, support=91.0, resistance=103.0)
+        # support 9% below => stop_pct=0.09 > STOP_LOSS_PCT_MAX (8%)
+        tech = self._make_tech(100.0, support=91.0, resistance=108.0)
         rr = risk_reward_calc("TEST", tech)
         assert rr.passes is False
 
     def test_rejects_no_support(self):
-        tech = self._make_tech(100.0, support=None, resistance=103.0)
+        tech = self._make_tech(100.0, support=None, resistance=108.0)
         rr = risk_reward_calc("TEST", tech)
         assert rr.passes is False
         assert "support" in rr.exclusion_reason.lower()
 
     def test_reward_risk_ratio_computed_correctly(self):
-        tech = self._make_tech(100.0, support=94.0, resistance=104.0)
+        # stop 6%, target 10% => rr=1.6667
+        tech = self._make_tech(100.0, support=94.0, resistance=110.0)
         rr = risk_reward_calc("TEST", tech)
         expected_rr = round(rr.target_pct / rr.stop_pct, 4)
         assert abs(rr.reward_risk_ratio - expected_rr) < 1e-6
@@ -458,7 +462,10 @@ def _make_candidate(rr_ratio: float = 0.8, all_signals: bool = True):
         recent_volume=1_500_000.0 if all_signals else 500_000.0,
         support_level=94.0,
         resistance_level=104.0,
+        atr=0.0,
+        adx=None,
         is_uptrend=True,
+        is_trending=False,
         rsi_bounce=all_signals,
         rsi_momentum=all_signals,
         volume_confirmed=all_signals,
