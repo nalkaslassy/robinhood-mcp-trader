@@ -214,8 +214,9 @@ class TradingAgent:
             logger.info("Skipping %s — %s", candidate.symbol, reason)
             return
 
-        low, high = calculate_position_size(account_value)
-        proposal = create_proposal(candidate, position_size_dollars=(low + high) / 2)
+        stop_pct = candidate.risk_reward.stop_pct
+        position_size = calculate_position_size(account_value, stop_pct)
+        proposal = create_proposal(candidate, position_size_dollars=position_size)
 
         logger.info("\n%s", format_proposal_for_display(proposal))
 

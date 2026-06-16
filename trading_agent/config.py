@@ -13,8 +13,9 @@ MODEL_DATA      = "claude-haiku-4-5-20251001"  # MCP tool calls, data fetching, 
 # Account sizing
 # ---------------------------------------------------------------------------
 STARTING_CAPITAL       = 250.00
-POSITION_SIZE_PCT_MIN  = 0.25   # 25% of current account value
-POSITION_SIZE_PCT_MAX  = 0.30   # 30% of current account value
+RISK_PER_TRADE_PCT     = 0.015  # risk 1.5% of account per trade (~$3.75 on $250)
+POSITION_SIZE_PCT_MIN  = 0.15   # never less than 15% of account (too small to matter)
+POSITION_SIZE_PCT_MAX  = 0.30   # never more than 30% of account regardless of stop
 CASH_RESERVE_PCT_MIN   = 0.15   # must keep at least 15% in cash
 
 # ---------------------------------------------------------------------------

@@ -18,13 +18,25 @@ class BracketPrices:
     target_pct: float
 
 
-def calculate_position_size(account_value: float) -> Tuple[float, float]:
-    """Return (min_dollars, max_dollars) for a new position."""
+def calculate_position_size(account_value: float, stop_pct: float) -> float:
+    """
+    Risk-based position sizing: size the trade so the stop-loss costs exactly
+    RISK_PER_TRADE_PCT of the account, then clamp to min/max bounds.
+
+    Wide stop  → smaller position (same dollar loss if stopped out)
+    Tight stop → larger position  (same dollar loss if stopped out)
+    """
     if account_value <= 0:
         raise ValueError(f"account_value must be positive, got {account_value}")
-    low = round(account_value * config.POSITION_SIZE_PCT_MIN, 2)
-    high = round(account_value * config.POSITION_SIZE_PCT_MAX, 2)
-    return low, high
+    if stop_pct <= 0:
+        raise ValueError(f"stop_pct must be positive, got {stop_pct}")
+
+    dollar_risk = account_value * config.RISK_PER_TRADE_PCT
+    raw_size    = dollar_risk / stop_pct
+
+    min_size = account_value * config.POSITION_SIZE_PCT_MIN
+    max_size = account_value * config.POSITION_SIZE_PCT_MAX
+    return round(max(min_size, min(max_size, raw_size)), 2)
 
 
 def calculate_bracket_prices(
