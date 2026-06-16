@@ -217,13 +217,22 @@ Run several dry-run cycles before going live. When satisfied:
 
 ---
 
-## Dynamic watchlist
+## Dynamic watchlist + discovery
 
-The agent maintains its own watchlist state in `trading_agent/data/watchlist_state.json`. Every Friday, it calls Claude Sonnet to review the past week's screening results and decide which symbols to keep, remove, or add. You never edit the watchlist manually — performance data drives the decisions.
+The agent maintains its own watchlist state in `trading_agent/data/watchlist_state.json`. You never edit it manually — the pipeline manages it automatically.
 
-Starting symbols: NVDA, AMD, TSLA, META, AMZN, SPY, QQQ, SOXL, TQQQ, XLE, XLF, NFLX, PLTR, SMCI
+**Active watchlist (14 symbols):** NVDA, AMD, TSLA, META, AMZN, SPY, QQQ, SOXL, TQQQ, XLE, XLF, NFLX, PLTR, SMCI
 
-Removed based on backtesting: AAPL, MSFT, GOOGL (0% win rate — insufficient volatility), COIN (8%), AVGO (0%)
+Removed based on backtesting: AAPL, MSFT, GOOGL (0% win rate — too slow-moving), COIN (8%), AVGO (0%)
+
+**Discovery universe (15 symbols):** scanned every morning alongside the active watchlist. Any symbol that passes the technical screen is automatically flagged as a candidate.
+
+| Type | Symbols |
+|---|---|
+| Sector / thematic ETFs | SPXL, IWM, ARKK, GLD, XLK |
+| High-beta large-caps | MSTR, SHOP, SNOW, HOOD, RIVN, CRWD, DKNG, ROKU, RBLX, UBER |
+
+**Friday review:** Claude Sonnet looks at the week's performance data for all active symbols plus any new candidates and decides what to keep, remove, or formally add. The decision is logged and a WhatsApp summary is sent.
 
 ---
 

@@ -76,7 +76,21 @@ WATCHLIST_SEED = [
 # Always included regardless of watchlist state — needed for macro checks
 WATCHLIST_PERMANENT = ["SPY", "QQQ"]
 
-LEVERAGED_ETFS = ["SOXL", "TQQQ"]  # subset flagged as leveraged/3x
+LEVERAGED_ETFS = ["SOXL", "TQQQ", "SPXL"]  # subset flagged as leveraged/3x
+
+# ---------------------------------------------------------------------------
+# Discovery universe — scanned daily for new candidates.
+# These are NOT on the active watchlist but will be registered as candidates
+# if they pass the technical screen. The Friday review then decides whether
+# to formally add them. Kept to high-beta, liquid, well-known names only.
+# ---------------------------------------------------------------------------
+DISCOVERY_UNIVERSE = [
+    # Sector / thematic ETFs
+    "SPXL", "IWM",  "ARKK", "GLD",  "XLK",
+    # High-beta large-caps matching winner profile
+    "MSTR", "SHOP", "SNOW", "HOOD", "RIVN",
+    "CRWD", "DKNG", "ROKU", "RBLX", "UBER",
+]
 
 # How many consecutive research days with no setup before a symbol is flagged
 WATCHLIST_FAIL_THRESHOLD = 15       # ~3 trading weeks

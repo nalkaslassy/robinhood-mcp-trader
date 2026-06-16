@@ -36,6 +36,7 @@ from trading_agent.research_engine import (
     MacroState,
     RankedCandidate,
     run_daily_research,
+    technical_screen,
 )
 from trading_agent.trade_proposal import (
     TradeProposal,
@@ -175,7 +176,45 @@ class TradingAgent:
                 f"{closest_line}"
             )
 
+        # Scan discovery universe for new candidates after main research
+        self._run_discovery_scan()
+
         return report
+
+    def _run_discovery_scan(self):
+        """
+        Screen DISCOVERY_UNIVERSE symbols that aren't already on the active
+        watchlist. Any that pass the technical screen are registered as
+        candidates for the Friday review to evaluate.
+        """
+        if self._data_client is None:
+            return
+
+        active = set(self._watchlist.get_active_symbols())
+        to_scan = [s for s in config.DISCOVERY_UNIVERSE if s not in active]
+
+        if not to_scan:
+            return
+
+        new_candidates = []
+        for symbol in to_scan:
+            try:
+                sig = technical_screen(symbol, self._data_client)
+                if sig.passes_screen:
+                    new_candidates.append(symbol)
+                    logger.info("Discovery: %s passed screen — flagging as candidate", symbol)
+            except Exception as e:
+                logger.debug("Discovery scan error for %s: %s", symbol, e)
+
+        if new_candidates:
+            self._watchlist.register_candidates(new_candidates)
+            self._notifier.send_alert(
+                f"Discovery alert: {len(new_candidates)} new candidate(s) flagged for Friday review: "
+                + ", ".join(new_candidates)
+            )
+            logger.info("Discovery scan complete — %d new candidate(s) registered", len(new_candidates))
+        else:
+            logger.info("Discovery scan complete — no new candidates today")
 
     def _run_weekly_watchlist_review(self):
         logger.info("=== Weekly watchlist review ===")
