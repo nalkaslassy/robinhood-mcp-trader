@@ -107,6 +107,9 @@ class BacktestClient:
     def get_vix_data(self, days: int) -> List[Dict]:
         return self.get_price_history("VIX", days=days)
 
+    def get_intraday_volume(self, symbol: str) -> None:
+        return None  # no intraday data in backtest — daily volume check only
+
 
 # ── signal detection ────────────────────────────────────────────────────────────
 

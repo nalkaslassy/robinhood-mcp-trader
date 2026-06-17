@@ -87,6 +87,9 @@ class MockMarketDataClient:
         return [{"date": date.today().isoformat(), "close": self._vix_level, "open": self._vix_level,
                  "high": self._vix_level, "low": self._vix_level, "volume": 0}]
 
+    def get_intraday_volume(self, symbol: str) -> Optional[float]:
+        return None  # backtest/mock: fall back to daily volume check
+
 
 # ---------------------------------------------------------------------------
 # Synthetic data helpers

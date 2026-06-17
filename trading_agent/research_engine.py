@@ -9,8 +9,10 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
+from datetime import datetime
 from enum import Enum
 from typing import Dict, List, Optional, Protocol, runtime_checkable
+from zoneinfo import ZoneInfo
 
 from trading_agent import config
 
@@ -37,6 +39,10 @@ class MarketDataClient(Protocol):
 
     def get_vix_data(self, days: int) -> List[Dict]:
         """Return price-history-style dicts for VIX."""
+        ...
+
+    def get_intraday_volume(self, symbol: str) -> Optional[float]:
+        """Return today's cumulative intraday volume, or None if unavailable."""
         ...
 
 
@@ -292,6 +298,16 @@ def _find_resistance(highs: List[float], current: float, lookback: int = 20) -> 
     return min(relevant)
 
 
+def _market_minutes_elapsed() -> float:
+    """Minutes since NYSE open (9:30 AM ET) today. Returns 0 before market open, caps at 390."""
+    et = ZoneInfo("America/New_York")
+    now_et = datetime.now(et)
+    market_open = now_et.replace(hour=9, minute=30, second=0, microsecond=0)
+    if now_et < market_open:
+        return 0.0
+    return min((now_et - market_open).total_seconds() / 60.0, 390.0)
+
+
 # ---------------------------------------------------------------------------
 # Pipeline steps
 # ---------------------------------------------------------------------------
@@ -323,6 +339,15 @@ def technical_screen(symbol: str, client: MarketDataClient) -> TechnicalSignal:
     avg_vol    = _sma(volumes, config.MA_SHORT_PERIOD) or 0.0
     recent_vol = float(volumes[-1]) if volumes else 0.0
 
+    # Intraday volume pace: project today's partial volume to a full-day equivalent.
+    # This lets the 10:30/11:30 scans confirm volume BEFORE yesterday's bar is the only signal.
+    intraday_vol = client.get_intraday_volume(symbol) if hasattr(client, "get_intraday_volume") else None
+    minutes_elapsed = _market_minutes_elapsed()
+    if intraday_vol is not None and minutes_elapsed >= 15:
+        projected_vol = intraday_vol * (390.0 / minutes_elapsed)
+    else:
+        projected_vol = 0.0
+
     # Compute ATR and ADX for informational fields (not used as gates)
     atr_vals    = _atr_series(highs, lows, closes, config.RSI_PERIOD)
     current_atr = atr_vals[-1] if atr_vals else 0.0
@@ -336,7 +361,8 @@ def technical_screen(symbol: str, client: MarketDataClient) -> TechnicalSignal:
     is_uptrend       = (ma50 > 0) and (current_price > ma50)
     rsi_bounce       = _detect_rsi_bounce(rsi_vals)
     rsi_momentum     = _detect_rsi_momentum(rsi_vals)
-    volume_confirmed = avg_vol > 0 and recent_vol >= avg_vol
+    # Volume confirmed if yesterday beat average OR today is on pace to beat average
+    volume_confirmed = avg_vol > 0 and (recent_vol >= avg_vol or projected_vol >= avg_vol)
 
     # Stop is valid when a support level exists within the configured % range
     has_valid_stop = (

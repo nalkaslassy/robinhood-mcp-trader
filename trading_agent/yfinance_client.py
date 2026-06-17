@@ -9,8 +9,9 @@ Results are cached in-process (one download per symbol per run).
 from __future__ import annotations
 
 import logging
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from typing import Dict, List, Optional
+from zoneinfo import ZoneInfo
 
 import yfinance as yf
 import pandas as pd
@@ -134,6 +135,31 @@ class YFinanceDataClient:
         # Fallback: single neutral bar so the macro check doesn't crash
         return [{"date": date.today().isoformat(), "close": 20.0,
                  "open": 20.0, "high": 20.0, "low": 20.0, "volume": 0.0}]
+
+    def get_intraday_volume(self, symbol: str) -> Optional[float]:
+        """
+        Return today's cumulative traded volume so far using 5-min bars.
+        Returns None if market hasn't opened or data is unavailable.
+        """
+        try:
+            yf_symbol = "^VIX" if symbol == "VIX" else symbol
+            ticker = yf.Ticker(yf_symbol)
+            df = ticker.history(period="1d", interval="5m", auto_adjust=True)
+            if df.empty:
+                return None
+            # Sum only bars from today (ignore any yesterday spillover)
+            et = ZoneInfo("America/New_York")
+            today_et = datetime.now(et).date()
+            if df.index.tz is not None:
+                df_today = df[df.index.tz_convert(et).normalize().dt.date == today_et]
+            else:
+                df_today = df[df.index.normalize().date == today_et]
+            if df_today.empty:
+                return None
+            return float(df_today["Volume"].sum())
+        except Exception as e:
+            logger.debug("get_intraday_volume(%s) error: %s", symbol, e)
+            return None
 
     def get_popular_watchlist_symbols(self) -> List[str]:
         # No equivalent in yfinance — weekly review works fine without new candidates
