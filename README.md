@@ -30,8 +30,10 @@ If no setups are found, it sends a brief WhatsApp summary so you know it ran.
 
 | Time | Task | What it does |
 |---|---|---|
-| 9:45 AM Mon–Fri | Research scan | Full pipeline — screens all symbols, sends proposals |
-| 1:00 PM Mon–Fri | Midday research scan | Second look — catches setups that develop after the open |
+| 9:45 AM Mon–Fri | Research scan | First look — screens all symbols after open |
+| 10:30 AM Mon–Fri | Research scan | Volume builds after open — catches early momentum |
+| 11:30 AM Mon–Fri | Research scan | Mid-morning confirmation — most reliable volume reading |
+| 1:00 PM Mon–Fri | Research scan | Post-lunch check — catches afternoon setups |
 | 12:30 PM Mon–Fri | Bracket monitor | Cancels orphaned exit orders, verifies all stops are active |
 | 3:30 PM Mon–Fri | Bracket monitor | Same check before close |
 
@@ -181,7 +183,13 @@ Run these once to register all four tasks:
 # Morning research scan — 9:45 AM
 schtasks /create /tn "RobinhoodAgent-Morning" /tr "C:\full\path\to\run_scheduled.bat" /sc WEEKLY /d MON,TUE,WED,THU,FRI /st 09:45 /f
 
-# Midday research scan — 1:00 PM
+# 10:30 AM scan
+schtasks /create /tn "RobinhoodAgent-1030" /tr "C:\full\path\to\run_scheduled.bat" /sc WEEKLY /d MON,TUE,WED,THU,FRI /st 10:30 /f
+
+# 11:30 AM scan
+schtasks /create /tn "RobinhoodAgent-1130" /tr "C:\full\path\to\run_scheduled.bat" /sc WEEKLY /d MON,TUE,WED,THU,FRI /st 11:30 /f
+
+# 1:00 PM scan
 schtasks /create /tn "RobinhoodAgent-Midday" /tr "C:\full\path\to\run_scheduled.bat" /sc WEEKLY /d MON,TUE,WED,THU,FRI /st 13:00 /f
 
 # Bracket monitor — 12:30 PM
