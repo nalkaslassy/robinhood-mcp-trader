@@ -1,15 +1,15 @@
 """
-WhatsApp Notifier — two-way approval via Twilio WhatsApp sandbox.
+SMS Notifier — two-way approval via Twilio SMS.
 
 Flow:
-  1. Agent sends you a WhatsApp message with trade details.
+  1. Agent texts you with trade details.
   2. You reply YES (or NO) from your phone.
   3. Agent polls Twilio for your reply and places/skips the trade.
 
 Setup (one-time):
-  1. In Twilio console: Messaging -> Try it out -> Send a WhatsApp message
-  2. Send the "join <word-word>" code to whatsapp:+14155238886 from your phone
-  3. Set TWILIO_WHATSAPP_FROM=whatsapp:+14155238886 in .env
+  1. Buy a Twilio phone number in console.twilio.com (~$1/month)
+  2. Set TWILIO_FROM=+1XXXXXXXXXX  (your Twilio number) in .env
+  3. Set YOUR_PHONE_NUMBER=+1XXXXXXXXXX  (your real number) in .env
 """
 from __future__ import annotations
 
@@ -36,20 +36,20 @@ class SMSNotifier:
     def __init__(self):
         self._account_sid = os.environ.get("TWILIO_ACCOUNT_SID", "")
         self._auth_token  = os.environ.get("TWILIO_AUTH_TOKEN", "")
-        self._from_wa     = os.environ.get("TWILIO_WHATSAPP_FROM", "whatsapp:+14155238886")
-        phone             = os.environ.get("YOUR_PHONE_NUMBER", "")
-        self._to_wa       = f"whatsapp:{phone}" if phone and not phone.startswith("whatsapp:") else phone
+        self._from_sms    = os.environ.get("TWILIO_FROM", "")
+        self._to_sms      = os.environ.get("YOUR_PHONE_NUMBER", "")
 
         self._enabled = bool(
-            self._account_sid and self._auth_token and phone
+            self._account_sid and self._auth_token
+            and self._from_sms and self._to_sms
             and self._account_sid != "your_twilio_account_sid_here"
         )
         if self._enabled:
             from twilio.rest import Client as TwilioClient
             self._client = TwilioClient(self._account_sid, self._auth_token)
-            logger.info("WhatsApp notifier ready (%s -> %s)", self._from_wa, self._to_wa)
+            logger.info("SMS notifier ready (%s -> %s)", self._from_sms, self._to_sms)
         else:
-            logger.warning("WhatsApp not configured — falling back to terminal approval.")
+            logger.warning("SMS not configured — falling back to terminal approval.")
 
     # ------------------------------------------------------------------
     # Outbound messages
@@ -57,18 +57,18 @@ class SMSNotifier:
 
     def _send(self, body: str) -> bool:
         if not self._enabled:
-            print(f"\n[WHATSAPP DISABLED]\n{body}")
+            print(f"\n[SMS DISABLED]\n{body}")
             return False
         try:
             msg = self._client.messages.create(
                 body=body,
-                from_=self._from_wa,
-                to=self._to_wa,
+                from_=self._from_sms,
+                to=self._to_sms,
             )
-            logger.info("WhatsApp sent: SID=%s status=%s", msg.sid, msg.status)
+            logger.info("SMS sent: SID=%s status=%s", msg.sid, msg.status)
             return True
         except Exception as e:
-            logger.error("WhatsApp send error: %s", e)
+            logger.error("SMS send error: %s", e)
             return False
 
     def send_proposal(self, proposal: TradeProposal) -> bool:
@@ -137,13 +137,13 @@ class SMSNotifier:
 
     def _get_reply_since(self, since: datetime) -> Optional[str]:
         """
-        Return the body of the most recent WhatsApp message sent FROM the
-        user TO our Twilio sandbox number, received after `since`.
+        Return the body of the most recent SMS sent FROM the user TO our
+        Twilio number, received after `since`.
         """
         try:
             messages = self._client.messages.list(
-                to=self._from_wa,       # messages arriving at our sandbox number
-                from_=self._to_wa,      # sent by the user's WhatsApp
+                to=self._from_sms,      # messages arriving at our Twilio number
+                from_=self._to_sms,     # sent by the user's phone
                 limit=5,
             )
             for msg in messages:
