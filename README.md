@@ -162,7 +162,7 @@ Open `.env` and fill in:
 | `ROBINHOOD_MCP_TOKEN` | Auto-read from `~/.claude/.credentials.json` after connecting via Claude Code |
 | `TWILIO_ACCOUNT_SID` | console.twilio.com |
 | `TWILIO_AUTH_TOKEN` | console.twilio.com |
-| `TWILIO_WHATSAPP_FROM` | `whatsapp:+14155238886` (Twilio sandbox number) |
+| `TWILIO_FROM` | Your Twilio sender (E.164 like `+15551234567`, or WhatsApp sandbox like `whatsapp:+14155238886`) |
 | `YOUR_PHONE_NUMBER` | Your number in E.164 format e.g. `+12125551234` |
 
 ### 3. Connect Robinhood MCP (one-time)
